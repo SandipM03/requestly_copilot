@@ -1,0 +1,149 @@
+{
+  "name": "requestly-copilot",
+  "displayName": "Requestly Copilot",
+  "description": "Run and debug APIs from VS Code via Requestly proxy with AI-generated payloads.",
+  "version": "0.0.1",
+  "publisher": "hackathon",
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "categories": [
+    "Other",
+    "Debuggers"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onCommand:requestlyCopilot.runRoute",
+    "onCommand:requestlyCopilot.debugRoute",
+    "onCommand:requestlyCopilot.generateCollection",
+    "onCommand:requestlyCopilot.showDetectedRoutes"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "requestlyCopilot.runRoute",
+        "title": "Requestly Copilot: Run Route"
+      },
+      {
+        "command": "requestlyCopilot.debugRoute",
+        "title": "Requestly Copilot: Debug Route"
+      },
+      {
+        "command": "requestlyCopilot.generateCollection",
+        "title": "Requestly Copilot: Generate Requestly Collection"
+      },
+      {
+        "command": "requestlyCopilot.showDetectedRoutes",
+        "title": "Requestly Copilot: Show Detected Routes"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "requestlyCopilot.runRoute",
+          "group": "navigation@100"
+        },
+        {
+          "command": "requestlyCopilot.debugRoute",
+          "group": "navigation@101"
+        },
+        {
+          "command": "requestlyCopilot.showDetectedRoutes",
+          "group": "navigation@102"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "requestlyCopilot.runRoute"
+        },
+        {
+          "command": "requestlyCopilot.debugRoute"
+        },
+        {
+          "command": "requestlyCopilot.generateCollection"
+        },
+        {
+          "command": "requestlyCopilot.showDetectedRoutes"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Requestly Copilot",
+      "properties": {
+        "requestlyCopilot.baseUrl": {
+          "type": "string",
+          "default": "http://localhost.requestly.io:3000",
+          "description": "Base URL used to execute detected API routes. Prefer localhost.requestly.io instead of localhost for Requestly interception."
+        },
+        "requestlyCopilot.proxyUrl": {
+          "type": "string",
+          "default": "http://localhost:8282",
+          "description": "Requestly proxy URL. Update this to the exact host and port shown in the Requestly desktop app."
+        },
+        "requestlyCopilot.smolifyApiUrl": {
+          "type": "string",
+          "default": "https://api.smolify.ai/v1/chat/completions",
+          "description": "Smolify AI endpoint used to generate payloads and debug suggestions."
+        },
+        "requestlyCopilot.aiProvider": {
+          "type": "string",
+          "enum": [
+            "local",
+            "smolify",
+            "gemini"
+          ],
+          "default": "local",
+          "description": "Choose local for built-in generation, gemini to use the Gemini API, or smolify for the existing remote flow."
+        },
+        "requestlyCopilot.smolifyApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Smolify API key."
+        },
+        "requestlyCopilot.smolifyModel": {
+          "type": "string",
+          "default": "smolify-chat",
+          "description": "Smolify model name."
+        },
+        "requestlyCopilot.geminiApiUrl": {
+          "type": "string",
+          "default": "https://generativelanguage.googleapis.com/v1beta",
+          "description": "Gemini API base URL."
+        },
+        "requestlyCopilot.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Gemini API key from Google AI Studio."
+        },
+        "requestlyCopilot.geminiModel": {
+          "type": "string",
+          "default": "gemini-2.5-flash",
+          "description": "Gemini model name used for payloads, debug suggestions, and route grouping."
+        },
+        "requestlyCopilot.requestTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "description": "Timeout in milliseconds for API execution."
+        },
+        "requestlyCopilot.collectionOutputPath": {
+          "type": "string",
+          "default": ".requestly/requestly-copilot.openapi.json",
+          "description": "Workspace-relative output path for the generated Requestly import file."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/vscode": "^1.88.0",
+    "typescript": "^5.5.4"
+  }
+}
