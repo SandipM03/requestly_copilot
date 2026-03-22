@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { generateDebugSuggestions, generatePayloads } from "./ai";
-import { generatePostmanCollection, generateRequestlyCollection } from "./collectionGenerator";
+import { generatePostmanCollection, generateRequestlyCollection, syncGeneratedCollections } from "./collectionGenerator";
 import { ApiCodeLensProvider } from "./codeLensProvider";
 import { getConfig } from "./config";
 import { logError, logInfo } from "./logger";
@@ -172,6 +172,8 @@ async function runRoute(
       progress.report({ message: "Sending request through Requestly proxy..." });
       const result = await executeRouteViaProxy(route, selectedPayload, config, resolvedPath);
 
+      void syncCollectionsForRoute(route);
+
       let debugSuggestion;
       if (includeDebugSuggestions && !result.ok) {
         progress.report({ message: "Generating debugging suggestions..." });
@@ -193,6 +195,15 @@ async function runRoute(
       );
     }
   );
+}
+
+async function syncCollectionsForRoute(route: DetectedRoute): Promise<void> {
+  try {
+    await syncGeneratedCollections(vscode.Uri.file(route.filePath));
+    logInfo(`Synced OpenAPI and Postman collection files for ${route.filePath}`);
+  } catch (error) {
+    logError(`Background collection sync failed for ${route.filePath}.`, error);
+  }
 }
 
 function getRouteFromActiveEditor(): DetectedRoute | undefined {

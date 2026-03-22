@@ -34,7 +34,8 @@ export async function generateRequestlyCollection(): Promise<void> {
     workspaceFolder.uri,
     config.collectionOutputPath,
     document,
-    `Generated OpenAPI/Swagger file with ${routes.length} routes at ${config.collectionOutputPath}.`
+    `Generated OpenAPI/Swagger file with ${routes.length} routes at ${config.collectionOutputPath}.`,
+    false
   );
 }
 
@@ -67,7 +68,47 @@ export async function generatePostmanCollection(): Promise<void> {
     workspaceFolder.uri,
     config.postmanCollectionOutputPath,
     document,
-    `Generated Postman collection with ${routes.length} routes at ${config.postmanCollectionOutputPath}.`
+    `Generated Postman collection with ${routes.length} routes at ${config.postmanCollectionOutputPath}.`,
+    false
+  );
+}
+
+export async function syncGeneratedCollections(resource: vscode.Uri): Promise<void> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(resource) ?? vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    return;
+  }
+
+  const config = getConfig(resource);
+  const routes = await collectWorkspaceRoutes();
+  if (!routes.length) {
+    return;
+  }
+
+  const routeSummaries = routes.map((route) => ({
+    key: `${route.method} ${route.path}`,
+    method: route.method,
+    path: route.path,
+    filePath: route.filePath
+  }));
+
+  const plan = await generateRouteGroupingPlan(routeSummaries, config);
+  const openApiDocument = buildOpenApiDocument(routes, plan, config.baseUrl);
+  const postmanDocument = buildPostmanCollection(routes, plan, config.baseUrl);
+
+  await writeGeneratedFile(
+    workspaceFolder.uri,
+    config.collectionOutputPath,
+    openApiDocument,
+    "",
+    true
+  );
+  await writeGeneratedFile(
+    workspaceFolder.uri,
+    config.postmanCollectionOutputPath,
+    postmanDocument,
+    "",
+    true
   );
 }
 
@@ -230,7 +271,8 @@ async function writeGeneratedFile(
   workspaceUri: vscode.Uri,
   outputPath: string,
   document: Record<string, unknown>,
-  successMessage: string
+  successMessage: string,
+  silent: boolean
 ): Promise<void> {
   const normalizedOutputPath = outputPath.replace(/\\/g, "/");
   const outputUri = vscode.Uri.joinPath(workspaceUri, ...normalizedOutputPath.split("/"));
@@ -240,6 +282,10 @@ async function writeGeneratedFile(
     outputUri,
     Buffer.from(JSON.stringify(document, null, 2), "utf8")
   );
+
+  if (silent) {
+    return;
+  }
 
   const opened = await vscode.window.showInformationMessage(successMessage, "Open File");
 

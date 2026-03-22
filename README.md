@@ -113,7 +113,7 @@ What happens:
 
 1. Create a Gemini API key in Google AI Studio.
 2. Set `requestlyCopilot.aiProvider` to `gemini`.
-3. Set `requestlyCopilot.geminiApiKey` to your API key.
+3. Add your key to a workspace `.env` file as `GEMINI_API_KEY=...` or `REQUESTLY_COPILOT_GEMINI_API_KEY=...`.
 4. Optionally change `requestlyCopilot.geminiModel` from the default `gemini-2.5-flash`.
 
 The Gemini integration uses the official Gemini `generateContent` API with structured JSON output.
