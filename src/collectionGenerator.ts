@@ -12,10 +12,12 @@ export async function generateRequestlyCollection(): Promise<void> {
     return;
   }
 
-  const config = getConfig();
+  const config = getConfig(workspaceFolder.uri);
   const routes = await collectWorkspaceRoutes();
   if (!routes.length) {
-    vscode.window.showWarningMessage("No supported Express or Next.js API routes were found in this workspace.");
+    vscode.window.showWarningMessage(
+      "No supported Express or Next.js API routes were found in this workspace. Supported patterns include app/router Express routes and Next.js app route handlers in app/**/route.ts or src/app/**/route.ts."
+    );
     return;
   }
 
@@ -38,7 +40,7 @@ export async function generateRequestlyCollection(): Promise<void> {
   );
 
   const opened = await vscode.window.showInformationMessage(
-    `Generated Requestly import file with ${routes.length} routes at ${config.collectionOutputPath}.`,
+    `Generated OpenAPI/Swagger file with ${routes.length} routes at ${config.collectionOutputPath}.`,
     "Open File"
   );
 

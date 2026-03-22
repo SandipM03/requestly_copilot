@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 import { DetectedRoute, HttpMethod } from "./types";
 
-const NEXT_ROUTE_REGEX =
-  /export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH)\s*\(/g;
+const NEXT_ROUTE_REGEXES = [
+  /export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH)\s*\(/g,
+  /export\s+const\s+(GET|POST|PUT|DELETE|PATCH)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g
+];
 
 export function detectRoutes(document: vscode.TextDocument): DetectedRoute[] {
   const text = document.getText();
@@ -48,21 +50,23 @@ export function detectRoutes(document: vscode.TextDocument): DetectedRoute[] {
   }
 
   if (isLikelyNextAppRoute(document.uri.fsPath)) {
-    for (const match of text.matchAll(NEXT_ROUTE_REGEX)) {
-      const method = match[1].toUpperCase() as HttpMethod;
-      const startOffset = match.index ?? 0;
-      const startPosition = document.positionAt(startOffset);
-      const codeSnippet = getCodeSnippet(document, startPosition.line);
+    for (const routeRegex of NEXT_ROUTE_REGEXES) {
+      for (const match of text.matchAll(routeRegex)) {
+        const method = match[1].toUpperCase() as HttpMethod;
+        const startOffset = match.index ?? 0;
+        const startPosition = document.positionAt(startOffset);
+        const codeSnippet = getCodeSnippet(document, startPosition.line);
 
-      routes.push({
-        method,
-        path: inferNextRoutePath(document.uri),
-        filePath: document.uri.fsPath,
-        line: startPosition.line,
-        codeSnippet,
-        framework: "next-app-router",
-        range: new vscode.Range(startPosition, startPosition)
-      });
+        routes.push({
+          method,
+          path: inferNextRoutePath(document.uri),
+          filePath: document.uri.fsPath,
+          line: startPosition.line,
+          codeSnippet,
+          framework: "next-app-router",
+          range: new vscode.Range(startPosition, startPosition)
+        });
+      }
     }
   }
 
@@ -105,18 +109,19 @@ function getCodeSnippet(document: vscode.TextDocument, line: number): string {
 
 function isLikelyNextAppRoute(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
-  return normalized.includes("/app/")
-    && (normalized.endsWith("/route.ts") || normalized.endsWith("/route.js"));
+  return (normalized.includes("/app/") || normalized.includes("/src/app/"))
+    && /\/route\.(t|j)sx?$/.test(normalized);
 }
 
 function inferNextRoutePath(uri: vscode.Uri): string {
   const normalized = uri.fsPath.replace(/\\/g, "/");
-  const appIndex = normalized.lastIndexOf("/app/");
+  const appMarker = normalized.includes("/src/app/") ? "/src/app/" : "/app/";
+  const appIndex = normalized.lastIndexOf(appMarker);
   if (appIndex === -1) {
     return "/";
   }
 
-  const appSubPath = normalized.slice(appIndex + "/app/".length);
+  const appSubPath = normalized.slice(appIndex + appMarker.length);
   const withoutFile = appSubPath.replace(/\/route\.(t|j)sx?$/, "");
   const segments = withoutFile
     .split("/")
