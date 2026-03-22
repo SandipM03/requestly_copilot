@@ -30,24 +30,45 @@ export async function generateRequestlyCollection(): Promise<void> {
 
   const plan = await generateRouteGroupingPlan(routeSummaries, config);
   const document = buildOpenApiDocument(routes, plan, config.baseUrl);
-  const normalizedOutputPath = config.collectionOutputPath.replace(/\\/g, "/");
-  const outputUri = vscode.Uri.joinPath(workspaceFolder.uri, ...normalizedOutputPath.split("/"));
-
-  await ensureParentDirectory(outputUri);
-  await vscode.workspace.fs.writeFile(
-    outputUri,
-    Buffer.from(JSON.stringify(document, null, 2), "utf8")
+  await writeGeneratedFile(
+    workspaceFolder.uri,
+    config.collectionOutputPath,
+    document,
+    `Generated OpenAPI/Swagger file with ${routes.length} routes at ${config.collectionOutputPath}.`
   );
+}
 
-  const opened = await vscode.window.showInformationMessage(
-    `Generated OpenAPI/Swagger file with ${routes.length} routes at ${config.collectionOutputPath}.`,
-    "Open File"
-  );
-
-  if (opened === "Open File") {
-    const doc = await vscode.workspace.openTextDocument(outputUri);
-    await vscode.window.showTextDocument(doc, { preview: false });
+export async function generatePostmanCollection(): Promise<void> {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    vscode.window.showWarningMessage("Open a workspace folder to generate a Postman collection.");
+    return;
   }
+
+  const config = getConfig(workspaceFolder.uri);
+  const routes = await collectWorkspaceRoutes();
+  if (!routes.length) {
+    vscode.window.showWarningMessage(
+      "No supported Express or Next.js API routes were found in this workspace. Supported patterns include app/router Express routes and Next.js app route handlers in app/**/route.ts or src/app/**/route.ts."
+    );
+    return;
+  }
+
+  const routeSummaries = routes.map((route) => ({
+    key: `${route.method} ${route.path}`,
+    method: route.method,
+    path: route.path,
+    filePath: route.filePath
+  }));
+
+  const plan = await generateRouteGroupingPlan(routeSummaries, config);
+  const document = buildPostmanCollection(routes, plan, config.baseUrl);
+  await writeGeneratedFile(
+    workspaceFolder.uri,
+    config.postmanCollectionOutputPath,
+    document,
+    `Generated Postman collection with ${routes.length} routes at ${config.postmanCollectionOutputPath}.`
+  );
 }
 
 async function collectWorkspaceRoutes(): Promise<DetectedRoute[]> {
@@ -140,6 +161,50 @@ function buildOpenApiDocument(
   };
 }
 
+function buildPostmanCollection(
+  routes: DetectedRoute[],
+  plan: RouteGroupPlan,
+  baseUrl: string
+): Record<string, unknown> {
+  const folderLookup = new Map<string, DetectedRoute[]>();
+  const assignedRouteKeys = new Set<string>();
+
+  for (const folder of plan.folders) {
+    const groupedRoutes = folder.routeKeys
+      .map((routeKey) => routes.find((route) => `${route.method} ${route.path}` === routeKey))
+      .filter((route): route is DetectedRoute => Boolean(route));
+
+    if (groupedRoutes.length) {
+      folderLookup.set(folder.name, groupedRoutes);
+      groupedRoutes.forEach((route) => assignedRouteKeys.add(`${route.method} ${route.path}`));
+    }
+  }
+
+  const ungroupedRoutes = routes.filter((route) => !assignedRouteKeys.has(`${route.method} ${route.path}`));
+  if (ungroupedRoutes.length) {
+    folderLookup.set("General", ungroupedRoutes);
+  }
+
+  return {
+    info: {
+      name: plan.collectionName,
+      description: plan.description,
+      schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    variable: [
+      {
+        key: "baseUrl",
+        value: baseUrl,
+        type: "string"
+      }
+    ],
+    item: Array.from(folderLookup.entries()).map(([folderName, folderRoutes]) => ({
+      name: folderName,
+      item: folderRoutes.map((route) => buildPostmanRequest(route))
+    }))
+  };
+}
+
 function buildOperationId(route: DetectedRoute): string {
   const cleanPath = route.path.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return `${route.method.toLowerCase()}_${cleanPath || "root"}`;
@@ -159,4 +224,77 @@ async function ensureParentDirectory(fileUri: vscode.Uri): Promise<void> {
   } catch {
     // createDirectory is already idempotent for existing folders in practice.
   }
+}
+
+async function writeGeneratedFile(
+  workspaceUri: vscode.Uri,
+  outputPath: string,
+  document: Record<string, unknown>,
+  successMessage: string
+): Promise<void> {
+  const normalizedOutputPath = outputPath.replace(/\\/g, "/");
+  const outputUri = vscode.Uri.joinPath(workspaceUri, ...normalizedOutputPath.split("/"));
+
+  await ensureParentDirectory(outputUri);
+  await vscode.workspace.fs.writeFile(
+    outputUri,
+    Buffer.from(JSON.stringify(document, null, 2), "utf8")
+  );
+
+  const opened = await vscode.window.showInformationMessage(successMessage, "Open File");
+
+  if (opened === "Open File") {
+    const doc = await vscode.workspace.openTextDocument(outputUri);
+    await vscode.window.showTextDocument(doc, { preview: false });
+  }
+}
+
+function buildPostmanRequest(route: DetectedRoute): Record<string, unknown> {
+  const normalizedPath = route.path.startsWith("/") ? route.path : `/${route.path}`;
+  const variablePath = normalizedPath
+    .replace(/\[([^\]]+)\]/g, ":$1");
+
+  const rawUrl = `{{baseUrl}}${variablePath}`;
+  const postmanPath = variablePath
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.startsWith(":")
+      ? { type: "string", value: segment.slice(1) }
+      : segment);
+
+  const request: Record<string, unknown> = {
+    name: `${route.method} ${route.path}`,
+    request: {
+      method: route.method,
+      header: [
+        {
+          key: "Content-Type",
+          value: "application/json"
+        }
+      ],
+      url: {
+        raw: rawUrl,
+        host: ["{{baseUrl}}"],
+        path: postmanPath
+      },
+      description: `Detected from ${route.framework} route in ${route.filePath}.`
+    }
+  };
+
+  if (route.method !== "GET" && route.method !== "DELETE") {
+    request.request = {
+      ...(request.request as Record<string, unknown>),
+      body: {
+        mode: "raw",
+        raw: JSON.stringify({}, null, 2),
+        options: {
+          raw: {
+            language: "json"
+          }
+        }
+      }
+    };
+  }
+
+  return request;
 }

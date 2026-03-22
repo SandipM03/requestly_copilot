@@ -7,13 +7,13 @@ import { DetectedRoute, RequestExecutionResult } from "./types";
 export async function executeRouteViaProxy(
   route: DetectedRoute,
   payload: unknown,
-  config: ExtensionConfig
+  config: ExtensionConfig,
+  resolvedPath?: string
 ): Promise<RequestExecutionResult> {
-  const routePath = normalizeRoutePath(route.path);
+  const routePath = normalizeRoutePath(resolvedPath ?? route.path);
   const targetUrl = `${config.baseUrl}${routePath}`;
   const proxyUrl = new URL(config.proxyUrl);
   const target = new URL(targetUrl);
-  const proxyRequestPath = `${proxyUrl.pathname || "/"}${proxyUrl.search || ""}`;
 
   const headers: Record<string, string> = {
     "Host": target.host,
@@ -27,12 +27,13 @@ export async function executeRouteViaProxy(
   if (body) {
     headers["Content-Type"] = "application/json";
     headers["Content-Length"] = Buffer.byteLength(body, "utf8").toString();
+  } else if (route.method !== "GET") {
+    headers["Content-Length"] = "0";
   }
 
   const start = Date.now();
   return sendViaProxy({
     proxyUrl,
-    proxyRequestPath,
     targetUrl: target.toString(),
     method: route.method,
     headers,
@@ -51,12 +52,11 @@ function normalizeRoutePath(path: string): string {
 }
 
 function canSendBody(method: string): boolean {
-  return method !== "GET" && method !== "DELETE";
+  return method !== "GET";
 }
 
 function sendViaProxy(args: {
   proxyUrl: URL;
-  proxyRequestPath: string;
   targetUrl: string;
   method: string;
   headers: Record<string, string>;
@@ -74,7 +74,7 @@ function sendViaProxy(args: {
         hostname: args.proxyUrl.hostname,
         port: args.proxyUrl.port,
         method: args.method,
-        path: args.proxyRequestPath || "/",
+        path: args.targetUrl,
         headers: args.headers
       },
       (response) => {

@@ -38,6 +38,7 @@ function getHtml(
 
   void webview;
   void extensionUri;
+  const formattedResponseBody = formatResponseBody(result.responseBody);
 
   return `<!DOCTYPE html>
   <html lang="en">
@@ -136,7 +137,7 @@ function getHtml(
     </div>
     <section class="card">
       <h2>Response Body</h2>
-      <pre>${escapeHtml(result.responseBody || "(empty response body)")}</pre>
+      <pre>${escapeHtml(formattedResponseBody)}</pre>
     </section>
     ${
       debugSuggestion
@@ -149,6 +150,18 @@ function getHtml(
     }
   </body>
   </html>`;
+}
+
+function formatResponseBody(responseBody: string): string {
+  if (!responseBody) {
+    return "(empty response body)";
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(responseBody), null, 2);
+  } catch {
+    return responseBody;
+  }
 }
 
 function escapeHtml(value: string): string {

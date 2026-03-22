@@ -18,6 +18,7 @@
     "onCommand:requestlyCopilot.runRoute",
     "onCommand:requestlyCopilot.debugRoute",
     "onCommand:requestlyCopilot.generateCollection",
+    "onCommand:requestlyCopilot.generatePostmanCollection",
     "onCommand:requestlyCopilot.showDetectedRoutes"
   ],
   "main": "./dist/extension.js",
@@ -34,6 +35,10 @@
       {
         "command": "requestlyCopilot.generateCollection",
         "title": "Requestly Copilot: Generate Requestly Collection"
+      },
+      {
+        "command": "requestlyCopilot.generatePostmanCollection",
+        "title": "Requestly Copilot: Generate Postman Collection"
       },
       {
         "command": "requestlyCopilot.showDetectedRoutes",
@@ -66,6 +71,9 @@
           "command": "requestlyCopilot.generateCollection"
         },
         {
+          "command": "requestlyCopilot.generatePostmanCollection"
+        },
+        {
           "command": "requestlyCopilot.showDetectedRoutes"
         }
       ]
@@ -80,7 +88,7 @@
         },
         "requestlyCopilot.proxyUrl": {
           "type": "string",
-          "default": "http://localhost:8282",
+          "default": "http://172.27.115.202:8281",
           "description": "Requestly proxy URL. Update this to the exact host and port shown in the Requestly desktop app."
         },
         "requestlyCopilot.smolifyApiUrl": {
@@ -133,6 +141,11 @@
           "type": "string",
           "default": ".requestly/requestly-copilot.openapi.json",
           "description": "Workspace-relative output path for the generated Requestly import file."
+        },
+        "requestlyCopilot.postmanCollectionOutputPath": {
+          "type": "string",
+          "default": ".requestly/requestly-copilot.postman.json",
+          "description": "Workspace-relative output path for the generated Postman collection file."
         }
       }
     }

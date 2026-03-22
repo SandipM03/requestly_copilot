@@ -17,6 +17,7 @@ Requestly Copilot is a hackathon-ready VS Code extension that finds API routes i
 - Shows status code, response body, and response time in a VS Code webview
 - In debug mode, shows local fallback suggestions by default and can use Gemini or Smolify
 - Generates an AI-organized OpenAPI import file that Requestly can turn into collections and grouped requests
+- Generates a Postman collection file from detected routes and grouping
 
 ## Project Structure
 
@@ -97,6 +98,17 @@ What happens:
 
 If `requestlyCopilot.aiProvider` is set to `local`, the extension uses smart grouping based on route segments and filenames. If it is set to `gemini`, the extension uses the Gemini API for payload generation, debug suggestions, and route grouping.
 
+## Postman Collection Export
+
+Run the command `Requestly Copilot: Generate Postman Collection`.
+
+What happens:
+
+1. The extension scans the workspace for supported routes.
+2. The extension groups the routes using the same AI/local grouping plan.
+3. The extension writes a Postman collection file to `.requestly/requestly-copilot.postman.json` by default.
+4. Import that file into Postman.
+
 ## Gemini Setup
 
 1. Create a Gemini API key in Google AI Studio.
@@ -160,6 +172,7 @@ For debug suggestions:
 - Recommended proxy URL: use the exact host and port shown in the Requestly desktop app
 - To enable Gemini, set `requestlyCopilot.aiProvider = gemini` and add `requestlyCopilot.geminiApiKey`.
 - To enable Smolify later, set `requestlyCopilot.aiProvider = smolify` and add `requestlyCopilot.smolifyApiKey`.
+- Postman collections are exported to `.requestly/requestly-copilot.postman.json` by default.
 - GET and DELETE requests are sent without a request body.
 - Dynamic route params like `:id` and `[id]` are replaced with `123`.
 - This implementation is optimized for a hackathon MVP and can be extended later with auth headers, query param generation, richer route parsing, and saved request history.

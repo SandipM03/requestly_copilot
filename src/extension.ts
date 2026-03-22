@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { generateDebugSuggestions, generatePayloads } from "./ai";
-import { generateRequestlyCollection } from "./collectionGenerator";
+import { generatePostmanCollection, generateRequestlyCollection } from "./collectionGenerator";
 import { ApiCodeLensProvider } from "./codeLensProvider";
 import { getConfig } from "./config";
 import { logError, logInfo } from "./logger";
@@ -97,6 +97,26 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("requestlyCopilot.generatePostmanCollection", async () => {
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Requestly Copilot: Generating Postman collection",
+            cancellable: false
+          },
+          async () => {
+            await generatePostmanCollection();
+          }
+        );
+      } catch (error) {
+        logError("Generate Postman collection failed.", error);
+        vscode.window.showErrorMessage(`Requestly Copilot failed: ${toErrorMessage(error)}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand("requestlyCopilot.showDetectedRoutes", async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -144,9 +164,13 @@ async function runRoute(
       progress.report({ message: "Generating payloads..." });
       const payloads = await generatePayloads(route.codeSnippet, config);
       const selectedPayload = payloads[payloadKey];
+      const resolvedPath = await resolveRoutePath(route, selectedPayload);
+      if (!resolvedPath) {
+        return;
+      }
 
       progress.report({ message: "Sending request through Requestly proxy..." });
-      const result = await executeRouteViaProxy(route, selectedPayload, config);
+      const result = await executeRouteViaProxy(route, selectedPayload, config, resolvedPath);
 
       let debugSuggestion;
       if (includeDebugSuggestions && !result.ok) {
@@ -187,6 +211,79 @@ function getRouteFromActiveEditor(): DetectedRoute | undefined {
   return routes.find((route) => route.line === currentLine)
     ?? routes.find((route) => route.line >= currentLine)
     ?? routes[0];
+}
+
+async function resolveRoutePath(route: DetectedRoute, payload: unknown): Promise<string | undefined> {
+  const parameters = extractPathParameters(route.path);
+  if (!parameters.length) {
+    return route.path;
+  }
+
+  let resolvedPath = route.path;
+  const payloadObject = isRecord(payload) ? payload : {};
+
+  for (const parameter of parameters) {
+    const suggestedValue = getSuggestedPathValue(parameter, payloadObject);
+    const value = await vscode.window.showInputBox({
+      prompt: `Enter value for path parameter "${parameter}"`,
+      placeHolder: suggestedValue,
+      value: suggestedValue,
+      ignoreFocusOut: true,
+      validateInput: (input) => input.trim() ? undefined : `Path parameter "${parameter}" is required.`
+    });
+
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    resolvedPath = resolvedPath
+      .replace(new RegExp(`:${escapeRegex(parameter)}\\b`, "g"), trimmed)
+      .replace(new RegExp(`\\[${escapeRegex(parameter)}\\]`, "g"), trimmed);
+  }
+
+  return resolvedPath;
+}
+
+function extractPathParameters(path: string): string[] {
+  const matches = path.matchAll(/:([A-Za-z0-9_]+)|\[([^\]]+)\]/g);
+  const seen = new Set<string>();
+  const parameters: string[] = [];
+
+  for (const match of matches) {
+    const parameter = match[1] ?? match[2];
+    if (parameter && !seen.has(parameter)) {
+      seen.add(parameter);
+      parameters.push(parameter);
+    }
+  }
+
+  return parameters;
+}
+
+function getSuggestedPathValue(parameter: string, payload: Record<string, unknown>): string {
+  const directValue = payload[parameter];
+  if (isPrimitivePathValue(directValue)) {
+    return String(directValue);
+  }
+
+  if (parameter.toLowerCase() === "id" && isPrimitivePathValue(payload.id)) {
+    return String(payload.id);
+  }
+
+  return "123";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPrimitivePathValue(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function deactivate(): void {}

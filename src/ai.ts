@@ -286,31 +286,274 @@ function toProviderFallbackNote(providerName: string, error: unknown): string {
 }
 
 function buildFallbackPayloads(apiCode: string, notes?: string): PayloadSet {
-  const lowerCode = apiCode.toLowerCase();
-  const looksLikeId = lowerCode.includes("id");
-  const looksLikeEmail = lowerCode.includes("email");
-  const looksLikeName = lowerCode.includes("name");
+  const fields = inferExpectedFields(apiCode);
+  const validPayload = Object.fromEntries(fields.map((field) => [field.name, buildValidValue(field)]));
+  const invalidPayload = Object.fromEntries(fields.map((field) => [field.name, buildInvalidValue(field)]));
+  const edgeCasePayload = Object.fromEntries(fields.map((field) => [field.name, buildEdgeCaseValue(field)]));
+
+  if (!fields.length) {
+    return {
+      validPayload: {},
+      invalidPayload: {},
+      edgeCasePayload: {},
+      notes: notes ?? "No request body fields could be inferred from the route code, so empty fallback payloads were generated."
+    };
+  }
 
   return {
-    validPayload: {
-      ...(looksLikeName ? { name: "Demo User" } : {}),
-      ...(looksLikeEmail ? { email: "demo@example.com" } : {}),
-      ...(looksLikeId ? { id: 123 } : {}),
-      sample: "value"
-    },
-    invalidPayload: {
-      id: "not-a-number",
-      email: "invalid-email",
-      sample: null
-    },
-    edgeCasePayload: {
-      ...(looksLikeName ? { name: "" } : {}),
-      ...(looksLikeEmail ? { email: "very.long.alias+test@example.com" } : {}),
-      ...(looksLikeId ? { id: 0 } : {}),
-      sample: ""
-    },
-    notes: notes ?? "Fallback payloads were generated locally because the local provider is enabled or Smolify did not return valid JSON."
+    validPayload,
+    invalidPayload,
+    edgeCasePayload,
+    notes: notes ?? `Fallback payloads were inferred from route code fields: ${fields.map((field) => field.name).join(", ")}.`
   };
+}
+
+type InferredFieldType = "string" | "number" | "boolean" | "array" | "object";
+
+interface InferredField {
+  name: string;
+  type: InferredFieldType;
+}
+
+function inferExpectedFields(apiCode: string): InferredField[] {
+  const fields = new Map<string, InferredField>();
+
+  collectDestructuredFields(apiCode, fields);
+  collectObjectLiteralFields(apiCode, fields);
+  collectMongooseSchemaFields(apiCode, fields);
+  collectPropertyAccessFields(apiCode, fields);
+
+  return Array.from(fields.values());
+}
+
+function collectDestructuredFields(apiCode: string, fields: Map<string, InferredField>): void {
+  const destructureRegexes = [
+    /const\s*\{([^}]+)\}\s*=\s*req\.body/g,
+    /const\s*\{([^}]+)\}\s*=\s*body/g,
+    /const\s*\{([^}]+)\}\s*=\s*payload/g,
+    /const\s*\{([^}]+)\}\s*=\s*data/g
+  ];
+
+  for (const regex of destructureRegexes) {
+    for (const match of apiCode.matchAll(regex)) {
+      const entries = match[1]
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      for (const entry of entries) {
+        const [rawName] = entry.split(/[:=]/).map((part) => part.trim());
+        if (rawName) {
+          upsertField(fields, rawName, inferFieldType(apiCode, rawName));
+        }
+      }
+    }
+  }
+}
+
+function collectObjectLiteralFields(apiCode: string, fields: Map<string, InferredField>): void {
+  const zodObjectRegex = /z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)/g;
+
+  for (const match of apiCode.matchAll(zodObjectRegex)) {
+    const body = match[1];
+    for (const propMatch of body.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*([^\n,}]+)/g)) {
+      const name = propMatch[1];
+      const schemaSource = propMatch[2];
+      upsertField(fields, name, inferTypeFromSchemaSource(name, schemaSource, apiCode));
+    }
+  }
+}
+
+function collectPropertyAccessFields(apiCode: string, fields: Map<string, InferredField>): void {
+  const propertyRegexes = [
+    /req\.body\.([A-Za-z_$][\w$]*)/g,
+    /body\.([A-Za-z_$][\w$]*)/g,
+    /payload\.([A-Za-z_$][\w$]*)/g,
+    /data\.([A-Za-z_$][\w$]*)/g
+  ];
+
+  for (const regex of propertyRegexes) {
+    for (const match of apiCode.matchAll(regex)) {
+      const name = match[1];
+      upsertField(fields, name, inferFieldType(apiCode, name));
+    }
+  }
+}
+
+function collectMongooseSchemaFields(apiCode: string, fields: Map<string, InferredField>): void {
+  for (const match of apiCode.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*Boolean\b/g)) {
+    upsertField(fields, match[1], "boolean");
+  }
+
+  for (const match of apiCode.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*Number\b/g)) {
+    upsertField(fields, match[1], "number");
+  }
+
+  for (const match of apiCode.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*String\b/g)) {
+    upsertField(fields, match[1], "string");
+  }
+
+  for (const match of apiCode.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*\[\s*(String|Number|Boolean)\s*\]/g)) {
+    upsertField(fields, match[1], "array");
+  }
+
+  for (const match of apiCode.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*\{\s*type\s*:\s*(Boolean|Number|String|\[[^\]]+\])/g)) {
+    const fieldName = match[1];
+    const schemaType = match[2];
+
+    if (schemaType === "Boolean") {
+      upsertField(fields, fieldName, "boolean");
+    } else if (schemaType === "Number") {
+      upsertField(fields, fieldName, "number");
+    } else if (schemaType === "String") {
+      upsertField(fields, fieldName, "string");
+    } else {
+      upsertField(fields, fieldName, "array");
+    }
+  }
+}
+
+function upsertField(fields: Map<string, InferredField>, name: string, type: InferredFieldType): void {
+  if (!fields.has(name)) {
+    fields.set(name, { name, type });
+    return;
+  }
+
+  const existing = fields.get(name);
+  if (existing && existing.type === "string" && type !== "string") {
+    fields.set(name, { name, type });
+  }
+}
+
+function inferFieldType(apiCode: string, fieldName: string): InferredFieldType {
+  const lowerName = fieldName.toLowerCase();
+  const fieldPattern = escapeRegex(fieldName);
+
+  if (new RegExp(`${fieldPattern}\\s*:\\s*z\\.number\\b|typeof\\s+${fieldPattern}\\s*===\\s*["']number["']|Number\\(${fieldPattern}\\)`).test(apiCode)) {
+    return "number";
+  }
+
+  if (new RegExp(`${fieldPattern}\\s*:\\s*z\\.boolean\\b|typeof\\s+${fieldPattern}\\s*===\\s*["']boolean["']`).test(apiCode)) {
+    return "boolean";
+  }
+
+  if (new RegExp(`${fieldPattern}\\s*:\\s*z\\.array\\b|Array\\.isArray\\(${fieldPattern}\\)`).test(apiCode)) {
+    return "array";
+  }
+
+  if (new RegExp(`${fieldPattern}\\s*:\\s*z\\.object\\b`).test(apiCode)) {
+    return "object";
+  }
+
+  if (/(^|_)(id|count|age|price|amount|qty|quantity|index|page|limit|offset)$/.test(lowerName)) {
+    return "number";
+  }
+
+  if (/^(is|has|can|should)[A-Z_]|^(is|has|can|should)/.test(fieldName)) {
+    return "boolean";
+  }
+
+  if (/(completed|enabled|disabled|published|verified|active|archived|deleted|done|visible|checked)$/.test(lowerName)) {
+    return "boolean";
+  }
+
+  if (/(list|items|tags|ids|values)$/.test(lowerName)) {
+    return "array";
+  }
+
+  return "string";
+}
+
+function inferTypeFromSchemaSource(fieldName: string, schemaSource: string, apiCode: string): InferredFieldType {
+  if (schemaSource.includes("z.number")) {
+    return "number";
+  }
+  if (schemaSource.includes("z.boolean")) {
+    return "boolean";
+  }
+  if (schemaSource.includes("z.array")) {
+    return "array";
+  }
+  if (schemaSource.includes("z.object")) {
+    return "object";
+  }
+
+  return inferFieldType(apiCode, fieldName);
+}
+
+function buildValidValue(field: InferredField): unknown {
+  const lowerName = field.name.toLowerCase();
+
+  switch (field.type) {
+    case "number":
+      return lowerName.includes("price") || lowerName.includes("amount") ? 99.99 : 123;
+    case "boolean":
+      return true;
+    case "array":
+      return lowerName.includes("id") ? [1, 2, 3] : ["item-1", "item-2"];
+    case "object":
+      return {};
+    case "string":
+    default:
+      if (lowerName.includes("email")) {
+        return "demo@example.com";
+      }
+      if (lowerName.includes("name")) {
+        return "Demo User";
+      }
+      if (lowerName.includes("title")) {
+        return "Demo title";
+      }
+      if (lowerName.includes("description") || lowerName.includes("content")) {
+        return "Demo description";
+      }
+      if (lowerName.includes("status")) {
+        return "active";
+      }
+      if (lowerName.includes("phone")) {
+        return "9876543210";
+      }
+      if (lowerName.includes("url")) {
+        return "https://example.com";
+      }
+      return `sample-${field.name}`;
+  }
+}
+
+function buildInvalidValue(field: InferredField): unknown {
+  switch (field.type) {
+    case "number":
+      return "not-a-number";
+    case "boolean":
+      return "not-a-boolean";
+    case "array":
+      return "not-an-array";
+    case "object":
+      return "not-an-object";
+    case "string":
+    default:
+      return field.name.toLowerCase().includes("email") ? "invalid-email" : null;
+  }
+}
+
+function buildEdgeCaseValue(field: InferredField): unknown {
+  switch (field.type) {
+    case "number":
+      return 0;
+    case "boolean":
+      return false;
+    case "array":
+      return [];
+    case "object":
+      return {};
+    case "string":
+    default:
+      return "";
+  }
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildFallbackRoutePlan(

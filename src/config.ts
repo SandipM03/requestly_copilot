@@ -12,13 +12,14 @@ export interface ExtensionConfig {
   geminiModel: string;
   requestTimeoutMs: number;
   collectionOutputPath: string;
+  postmanCollectionOutputPath: string;
 }
 
 export function getConfig(resource?: vscode.Uri): ExtensionConfig {
   const config = vscode.workspace.getConfiguration("requestlyCopilot", resource);
   return {
     baseUrl: trimTrailingSlash(config.get<string>("baseUrl", "http://localhost.requestly.io:3000")),
-    proxyUrl: trimTrailingSlash(config.get<string>("proxyUrl", "http://localhost:8282")),
+    proxyUrl: trimTrailingSlash(config.get<string>("proxyUrl", "http://172.27.115.202:8281")),
     aiProvider: config.get<"local" | "smolify" | "gemini">("aiProvider", "local"),
     smolifyApiUrl: config.get<string>("smolifyApiUrl", "https://api.smolify.ai/v1/chat/completions"),
     smolifyApiKey: config.get<string>("smolifyApiKey", ""),
@@ -26,10 +27,11 @@ export function getConfig(resource?: vscode.Uri): ExtensionConfig {
     geminiApiUrl: trimTrailingSlash(
       config.get<string>("geminiApiUrl", "https://generativelanguage.googleapis.com/v1beta")
     ),
-    geminiApiKey: config.get<string>("geminiApiKey", "AIzaSyCc4cT21X9E-23hY3eW2fh25w2DZ1YBpEA"),
+    geminiApiKey: config.get<string>("geminiApiKey", ""),
     geminiModel: config.get<string>("geminiModel", "gemini-2.5-flash"),
     requestTimeoutMs: config.get<number>("requestTimeoutMs", 15000),
-    collectionOutputPath: config.get<string>("collectionOutputPath", ".requestly/requestly-copilot.openapi.json")
+    collectionOutputPath: config.get<string>("collectionOutputPath", ".requestly/requestly-copilot.openapi.json"),
+    postmanCollectionOutputPath: config.get<string>("postmanCollectionOutputPath", ".requestly/requestly-copilot.postman.json")
   };
 }
 

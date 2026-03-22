@@ -1,0 +1,7 @@
+{
+  "requestlyCopilot.proxyUrl": "http://172.27.115.202:8281",
+  "requestlyCopilot.baseUrl": "http://localhost.requestly.io:3000",
+  "requestlyCopilot.aiProvider": "gemini",
+  "requestlyCopilot.geminiApiKey": "AIzaSyABIxatS4jdu-8HbrLxYoU2cgabZeWnIuE",
+  "requestlyCopilot.geminiModel": "gemini-2.5-flash"
+}
